@@ -1,7 +1,6 @@
-from wsgiref import headers
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from numpy.ma.core import around
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,20 +18,17 @@ async def get_movies(
     per_page: int = Query(10, ge=1, le=20),
 ):
 
-    if page < 1 or per_page < 1:
-        raise HTTPException(
-            status_code=422,
-            detail={
-                "loc": ["query", "page"],
-                "msg": "ensure this value is greater than or equal to 1",
-                "type": "exc.errors.number.not_ge",
-            },
+    skip = (page - 1) * per_page
+    limit = per_page
+
+    movies_list = (
+        await db.scalars(
+            select(MovieModel).order_by(MovieModel.id).offset(skip).limit(limit)
         )
-    offset = (page - 1) * per_page
-    movies_list = (await db.scalars(select(MovieModel))).all()
-    movies = movies_list[offset : offset + per_page]
-    total_items = len(movies_list)
-    total_pages = around(total_items / per_page)
+    ).all()
+
+    total_items = len((await db.scalars(select(MovieModel))).all())
+    total_pages = math.ceil((total_items + per_page - 1) // per_page)
 
     if page > total_pages:
         raise HTTPException(status_code=404, detail="No movies found.")
@@ -40,15 +36,15 @@ async def get_movies(
     if page == 1:
         prev_page = None
     else:
-        prev_page = f"/theater/movies/?page={page - 1} &per_page={per_page}"
+        prev_page = f"/theater/movies/?page={page - 1}&per_page={per_page}"
 
     if page == total_pages:
         next_page = None
     else:
-        next_page = f"/theater/movies/?page={page + 1} &per_page={per_page}"
+        next_page = f"/theater/movies/?page={page + 1}&per_page={per_page}"
 
     return {
-        "movies": movies,
+        "movies": movies_list,
         "prev_page": prev_page,
         "next_page": next_page,
         "total_pages": total_pages,
@@ -56,7 +52,7 @@ async def get_movies(
     }
 
 
-@router.get("/movies/{movie_id}/", response_model=schemas.MovieSchema)
+@router.get("/movies/{movie_id}/", response_model=schemas.MovieDetailResponseSchema)
 async def get_single_movie(movie_id: int, db: AsyncSession = Depends(get_db)):
     movie = (
         await db.scalars(select(MovieModel).where(MovieModel.id == movie_id))
