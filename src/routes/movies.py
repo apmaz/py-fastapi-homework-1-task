@@ -3,6 +3,7 @@ import math
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.functions import func
 
 import src.schemas.movies as schemas
 from src.database.models import MovieModel
@@ -27,7 +28,7 @@ async def get_movies(
         )
     ).all()
 
-    total_items = len((await db.scalars(select(MovieModel))).all())
+    total_items = (await db.scalars(select(func.count()).select_from(MovieModel))).one()
     total_pages = math.ceil((total_items + per_page - 1) // per_page)
 
     if page > total_pages:
